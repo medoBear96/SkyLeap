@@ -12,6 +12,14 @@
 
 #define PI 3.14159265
 
+#define YAW      0
+#define PITCH    1
+#define ROLL     2
+#define THROTTLE 3
+
+#define X           0     // X axis
+#define Y           1     // Y axis
+#define Z           2     // Z axis
 //CALIBRATION
 int sample=200;
 
