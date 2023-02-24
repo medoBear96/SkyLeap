@@ -46,6 +46,8 @@ Channel channel1(PTD3,1);
 Channel channel2(PTD2,2);
 Channel channel3(PTD0,3);
 Channel channel4(PTD5,4);
+int default_offset[4] = {118,53,228,-12};
+float default_factor[4] = {1.244344, 1.375000, 1.726845, 1.196953};
 
 //AVVIO MEDIA MOBILE
 FifoReg fiforeg(20);
@@ -162,6 +164,10 @@ int main()
         signal_stop_calibration(3);//SOUND AND LIGHT EFFECT
     } else {
         if (serialCom) {printf("SWITCH 4 OFF\n");}
+        channel1.channel_default_value(default_offset[0], default_factor[0]);
+        channel2.channel_default_value(default_offset[1], default_factor[1]);
+        channel3.channel_default_value(default_offset[2], default_factor[2]);
+        channel4.channel_default_value(default_offset[3], default_factor[3]);
     }
  
     signal_ready();wait(1);//SOUND AND LIGHT EFFECT
@@ -259,16 +265,15 @@ int main()
         power[2] = 1000 + channel3.read();
         power[3] = 1000 + channel3.read();
 
-        /*
-        channel1.print();channel2.print();channel3.print();channel4.print();
-        printf("\n");
-        */
+        //channel1.print();channel2.print();channel3.print();channel4.print();
+        //printf("\n");
+        
         //ESC OUTPUT
         ESC1.pulsewidth_us(power[0]);
         ESC2.pulsewidth_us(power[1]);
         ESC3.pulsewidth_us(power[2]);
         ESC4.pulsewidth_us(power[3]);
-        printf("%6d %6d %6d   \n",raw_mag[0],raw_mag[1],raw_mag[2]);
+        //printf("%6d %6d %6d   \n",raw_mag[0],raw_mag[1],raw_mag[2]);
         /*
         //printf("%6d %6d %6d  -  %6d %6d %6d  -  %6d %6d %6d\n",raw_acc[0],raw_acc[1],raw_acc[2],raw_gyr[0],raw_gyr[1],raw_gyr[2],raw_mag[0],raw_mag[1],raw_mag[2]);
         //printf("%6d %6d %6d   \n",raw_mag[0],raw_mag[1],raw_mag[2]);

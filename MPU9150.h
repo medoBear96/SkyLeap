@@ -124,6 +124,8 @@ void readMagData(int16_t * destination ) {
     int16_t cachedata[3];
     writeByte(AK8975A_ADDRESS, AK8975A_CNTL, 0x01);     // toggle enable data read from magnetometer, no continuous read mode!
     wait(0.01);
+
+
     // Only accept a new magnetometer data read if the data ready bit is set and 
     // if there are no sensor overflow or data read errors
     if(readByte(AK8975A_ADDRESS, AK8975A_ST1) & 0x01) {              // wait for magnetometer data ready bit to be set

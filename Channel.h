@@ -48,6 +48,11 @@ public:
         factor = 1100.00000/new_max;
     }
 
+    void channel_default_value(int default_offset, float default_factor){
+        offset = default_offset;
+        factor = default_factor;
+    }
+
     /*
         read operation require the application of offset and scaling factor:
         it's possible to calibrate one time and read separately
