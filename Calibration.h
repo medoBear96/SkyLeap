@@ -3,193 +3,199 @@
 #include "Channel.h"
 #ifndef FUNCTIONS_H_INCLUDED
 #define FUNCTIONS_H_INCLUDED
-  void readAccelData(std::int16_t *destination);  // Function prototype, its declaration
-  void readGyroData(std::int16_t * destination);
+  void readAccelData(std::int16_t *destination);    // calibration need to read mpu data 
+  void readGyroData(std::int16_t * destination);    // import some header MPU9150 functions
   void readMagData(int16_t *destination);
 #endif
 
+#define YAW      0
+#define PITCH    1
+#define ROLL     2
+#define THROTTLE 3
+
+#define X           0     // X axis
+#define Y           1     // Y axis
+#define Z           2     // Z axis
+
 // ERRORI 
 //-----------------------------
-int     offset_acc[3];
-int     offset_gyr[3];
-int     hard_mag[3];
-float   soft_mag[3];
+int     offset_acc[3];      //accelerometer offset
+int     offset_gyr[3];      //gyroscope offset
+int     hard_mag[3];        //hard iron offset 
+float   soft_mag[3];        //soft iron deformation, normalized
 
 //-----------------------------
-
-int     max[3]      = {-32768,-32768,-32768};
-int     min[3]      = {32767,32767,32767};
+//max and min magnetic rilevations
+int     mag_max[3]      = {-32768,-32768,-32768};
+int     mag_min[3]      = {32767,32767,32767};
 
 
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------
-//--------------------------------------------FUNZIONI---------------------------------------------------------------------------------------------------------------
+//-----------Acc and Gyro sensors calibration---------------------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 bool acc_gyr_calibration(int sample) {
-    int bound = 400;
+    int bound = 400;                    //movement detection limit
 
-    int16_t acc_data[3] = {0,0,0};
-    int16_t gyr_data[3] = {0,0,0};
-    long    test_acc[3] = {0,0,0};
+    int16_t acc_data[3] = {0,0,0};      //input data from MPU
+    int16_t gyr_data[3] = {0,0,0};      
+    long    test_acc[3] = {0,0,0};      //accumulate variable
     long    test_gyr[3] = {0,0,0};
     int     max[3]      = {-32768,-32768,-32768};
     int     min[3]      = {32767,32767,32767};
     int     delta[3]    = {0,0,0};
 
     for (int i=0; i<sample; i++) {
-        readAccelData(acc_data);
+        readAccelData(acc_data);        //read data from mpu
         readGyroData(gyr_data);
         
-        test_acc[0] = test_acc[0] + acc_data[0];
-        test_acc[1] = test_acc[1] + acc_data[1];
-        test_acc[2] = test_acc[2] + acc_data[2];
+        test_acc[X] += acc_data[X];     //accumulate
+        test_acc[Y] += acc_data[Y];
+        test_acc[Z] += acc_data[Z];
 
-        test_gyr[0] = test_gyr[0] + gyr_data[0];
-        test_gyr[1] = test_gyr[1] + gyr_data[1];
-        test_gyr[2] = test_gyr[2] + gyr_data[2];
+        test_gyr[X] += gyr_data[X];
+        test_gyr[Y] += gyr_data[Y];
+        test_gyr[Z] += gyr_data[Z];
 
-        if (acc_data[0] > max[0]) {
-            max[0] = acc_data[0];
-        } else if (acc_data[0] < min[0]) {
-            min[0]=acc_data[0]; }
-        if (acc_data[1] > max[1]) {
-            max[1]=acc_data[1];
-        } else if (acc_data[1] < min[1]) {
-            min[1]=acc_data[1]; }
-        if (acc_data[2] > max[2]) {
-            max[2]=acc_data[2];
-        } else if (acc_data[2] < min[2]) {
-            min[2]=acc_data[2]; }
+        if (acc_data[X] > max[X]) {     //check for max and min update
+            max[X] = acc_data[X];
+        } else if (acc_data[X] < min[X]) {
+            min[X]=acc_data[X]; }
+        if (acc_data[Y] > max[Y]) {
+            max[Y]=acc_data[Y];
+        } else if (acc_data[Y] < min[Y]) {
+            min[Y]=acc_data[Y]; }
+        if (acc_data[Z] > max[Z]) {
+            max[Z]=acc_data[Z];
+        } else if (acc_data[Z] < min[Z]) {
+            min[Z]=acc_data[Z]; }
         wait_ms(20);
     }
-    // CALCOLIAMO LA DIFFERENZA: se troppo alta rilanceremo la calibrazione
-    delta[0] = max[0] - min[0];
-    delta[1] = max[1] - min[1];
-    delta[2] = max[2] - min[2];
+    // calculate difference: if bigger than "bound" the calibration will be restarted
+    delta[X] = max[X] - min[X];
+    delta[Y] = max[Y] - min[Y];
+    delta[Z] = max[Z] - min[Z];
 
-    if(delta[0]>bound || delta[1]>bound || delta[2]>bound) {  //MOVEMENT DETECTED
+    if(delta[X]>bound || delta[Y]>bound || delta[Z]>bound) {  //MOVEMENT DETECTED
         return true;
-    } else {    //CALIBRATION
-        offset_acc[0] =  test_acc[0]/sample;
-        offset_acc[1] =  test_acc[1]/sample;
-        offset_acc[2] = (test_acc[2]/sample) - 16384;
-        offset_gyr[0] =  test_gyr[0]/sample;
-        offset_gyr[1] =  test_gyr[1]/sample;
-        offset_gyr[2] =  test_gyr[2]/sample;
+    } else {    //calculate average
+        offset_acc[X] =  test_acc[X]/sample;
+        offset_acc[Y] =  test_acc[Y]/sample;
+        offset_acc[Z] = (test_acc[Z]/sample) - 16384; // remove gravity vector from OFFSET
+        offset_gyr[X] =  test_gyr[X]/sample;
+        offset_gyr[Y] =  test_gyr[Y]/sample;
+        offset_gyr[Z] =  test_gyr[Z]/sample;
         return false;
     }
 }
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------
-//-------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//-------Magnetic sensor calibration-----------------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 bool mag_calibration() {
 
     // HARD IRON CALIBRATION
-    /* Faremo ruotare il sistema e registreremo massimi e minimi di ciascun asse
-    finita la misurazione calcoleremo la differenza e sottrarremo il delta(hard iron) a future misurazioni*/
-    int     counter     = 0;
-    bool    changes     = true;
-    bool    acceptable  = false;
+    /* magnetic calibration is done by rotating sensor in all direction
+        data will be autocalibrated in flight but without a proper calibration
+        new values that exceed boundaries can lead to flight failure*/
+
+    int     counter     = 0;     //count "without changes" cycle
+    bool    changes     = true;  //check for max and min update
+    bool    acceptable  = false; //checks that the calibration is a sufficient
     
-    int16_t new_values[3];
+    int16_t new_values[3];      //data read
 
     while(acceptable == false) {
         wait_ms(50);
         readMagData(new_values);
         changes = false;
 
-        // AGGIORNA I VALORI MAX MIN
-        if (new_values[0] > max[0]) {
-            max[0] = new_values[0];
+        // update max min values
+        if (new_values[X] > mag_max[X]) {
+            mag_max[X] = new_values[X];
             changes = true;
-        } else if (new_values[0]< min[0]) {
-            min[0] = new_values[0];
+        } else if (new_values[X]< mag_min[X]) {
+            mag_min[X] = new_values[X];
             changes = true;  }
-        if (new_values[1] > max[1]) {
-            max[1] = new_values[1];
+        if (new_values[Y] > mag_max[Y]) {
+            mag_max[Y] = new_values[Y];
             changes = true;
-        } else if (new_values[1] < min[1]) {
-            min[1] = new_values[1];
+        } else if (new_values[Y] < mag_min[Y]) {
+            mag_min[Y] = new_values[Y];
             changes = true;  }
-        if (new_values[2] > max[2]) {
-            max[2] = new_values[2];
+        if (new_values[Z] > mag_max[Z]) {
+            mag_max[Z] = new_values[Z];
             changes = true;
-        } else if (new_values[2] < min[2]) {
-            min[2] = new_values[2];
+        } else if (new_values[Z] < mag_min[Z]) {
+            mag_min[Z] = new_values[Z];
             changes = true;  }
 
-        // VERIFICA SE CI SONO VARIAZIONI
+        // if not update
         if (not changes) {
             counter++;
         } else {
             counter=0;
         }
-        // SE NESSUNA VARIAZIONE PER MILLE CAMPIONI FINISCI IL CAMPIONAMENTO
+        // if counter reach acceptable value the calibration is concluded
         if (counter==200) {
             acceptable=true;
         }
     }
-    //FACCIAMO LA DIFFERENZA
-    hard_mag[0] = (max[0] + min[0])/2;
-    hard_mag[1] = (max[1] + min[1])/2;
-    hard_mag[2] = (max[2] + min[2])/2;
-
-    soft_mag[0] = (max[0]-hard_mag[0])/100.0000;
-    soft_mag[1] = (max[1]-hard_mag[1])/100.0000;
-    soft_mag[2] = (max[2]-hard_mag[2])/100.0000;
+    //calculate offset: repostion the middle point in the center
+    hard_mag[X] = (mag_max[X] + mag_min[X])/2;
+    hard_mag[Y] = (mag_max[Y] + mag_min[Y])/2;
+    hard_mag[Z] = (mag_max[Z] + mag_min[Z])/2;
+    //normalize to +/-100
+    soft_mag[X] = (mag_max[X]-hard_mag[X])/100.0000;
+    soft_mag[Y] = (mag_max[Y]-hard_mag[Y])/100.0000;
+    soft_mag[Z] = (mag_max[Z]-hard_mag[Z])/100.0000;
 
 }
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------
-//-------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//--------READ and on flight calibration of magnetic sensor------------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 void readMagData_calibr(int16_t * destination ) {
-    int16_t values[3];
+    int16_t values[3];          //read data
     readMagData(values);
-    bool changes= false;
-    if (values[0] > max[0]) {
-        max[0] = values[0];
+    bool changes= false;        //max/min change flag
+    if (values[X] > mag_max[X]) {
+        mag_max[X] = values[X];
         changes = true;
-    } else if (values[0]< min[0]) {
-        min[0] = values[0];
+    } else if (values[X]< mag_min[X]) {
+        mag_min[X] = values[X];
         changes = true;  }
-    if (values[1] > max[1]) {
-        max[1] = values[1];
+    if (values[Y] > mag_max[Y]) {
+        mag_max[Y] = values[Y];
         changes = true;
-    } else if (values[1] < min[1]) {
-        min[1] = values[1];
+    } else if (values[Y] < mag_min[Y]) {
+        mag_min[Y] = values[Y];
         changes = true;  }
-    if (values[2] > max[2]) {
-        max[2] = values[2];
+    if (values[Z] > mag_max[Z]) {
+        mag_max[Z] = values[Z];
         changes = true;
-    } else if (values[2] < min[2]) {
-        min[2] = values[2];
+    } else if (values[Z] < mag_min[Z]) {
+        mag_min[Z] = values[Z];
         changes = true;  }
 
-    if (changes) {
-        hard_mag[0] = (max[0] + min[0])/2;
-        hard_mag[1] = (max[1] + min[1])/2;
-        hard_mag[2] = (max[2] + min[2])/2;
+    if (changes) {      //if changes: update offset and normalize factor
+        hard_mag[X] = (mag_max[X] + mag_min[X])/2;
+        hard_mag[Y] = (mag_max[Y] + mag_min[Y])/2;
+        hard_mag[Z] = (mag_max[Z] + mag_min[Z])/2;
 
-        soft_mag[0] = (max[0]-hard_mag[0])/100.0000;
-        soft_mag[1] = (max[1]-hard_mag[1])/100.0000;
-        soft_mag[2] = (max[2]-hard_mag[2])/100.0000;
+        soft_mag[X] = (mag_max[X]-hard_mag[X])/100.0000;
+        soft_mag[Y] = (mag_max[Y]-hard_mag[Y])/100.0000;
+        soft_mag[Z] = (mag_max[Z]-hard_mag[Z])/100.0000;
     }
-    destination[0] =  values[0];
-    destination[1] =  values[1];
-    destination[2] =  values[2];
+    destination[X] =  values[X];        //value output
+    destination[Y] =  values[Y];
+    destination[Z] =  values[Z];
 }
 
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-
-void radio_range_calibration(Channel ch1,Channel ch2,Channel ch3,Channel ch4) {
-    
-}

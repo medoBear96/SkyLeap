@@ -209,14 +209,14 @@ int main()
         readMagData_calibr(raw_mag); //versione di readMagData(raw_mag) che corregge gli errori in corso d'opera
 
         //ACC CORRECTION
-        raw_acc[0] = raw_acc[0] - offset_acc[0];
-        raw_acc[1] = raw_acc[1] - offset_acc[1];
-        raw_acc[2] = raw_acc[2] - offset_acc[2];
+        raw_acc[0] -= offset_acc[0];
+        raw_acc[1] -= offset_acc[1];
+        raw_acc[2] -= offset_acc[2];
 
         //GYRO CORRECTION
-        raw_gyr[0] = raw_gyr[0] - offset_gyr[0];
-        raw_gyr[1] = raw_gyr[1] - offset_gyr[1];
-        raw_gyr[2] = raw_gyr[2] - offset_gyr[2];
+        raw_gyr[0] -= offset_gyr[0];
+        raw_gyr[1] -= offset_gyr[1];
+        raw_gyr[2] -= offset_gyr[2];
 
         //MAGN CORRECTION
         raw_mag[0] = (raw_mag[0] - hard_mag[0]) / soft_mag[0];      // per correggere l'errore si è sviluppato il modello
