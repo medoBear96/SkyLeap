@@ -238,7 +238,7 @@ int main()
         //applicazione della media mobile
         averageYaw = fiforeg.FifoReg_shift_and_m_av(yaw* 180 /PI);
 
-        //Insert complementary filter
+        //Insert complementary filter 
         
 
 

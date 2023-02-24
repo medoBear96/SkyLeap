@@ -7,7 +7,7 @@
   void readGyroData(std::int16_t * destination);    // import some header MPU9150 functions
   void readMagData(int16_t *destination);
 #endif
-
+ 
 #define YAW      0
 #define PITCH    1
 #define ROLL     2
