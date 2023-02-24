@@ -13,9 +13,9 @@
 #define ROLL     2
 #define THROTTLE 3
 
-#define X           0     // X axis
-#define Y           1     // Y axis
-#define Z           2     // Z axis
+#define X           0     //X axis
+#define Y           1     //Y axis
+#define Z           2     //Z axis
 
 // ERRORI 
 //-----------------------------

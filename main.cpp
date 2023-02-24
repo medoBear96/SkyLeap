@@ -259,18 +259,19 @@ int main()
         power[2] = 1000 + channel3.read();
         power[3] = 1000 + channel3.read();
 
+        /*
         channel1.print();channel2.print();channel3.print();channel4.print();
         printf("\n");
-
+        */
         //ESC OUTPUT
         ESC1.pulsewidth_us(power[0]);
         ESC2.pulsewidth_us(power[1]);
         ESC3.pulsewidth_us(power[2]);
         ESC4.pulsewidth_us(power[3]);
-        
+        printf("%6d %6d %6d   \n",raw_mag[0],raw_mag[1],raw_mag[2]);
         /*
         //printf("%6d %6d %6d  -  %6d %6d %6d  -  %6d %6d %6d\n",raw_acc[0],raw_acc[1],raw_acc[2],raw_gyr[0],raw_gyr[1],raw_gyr[2],raw_mag[0],raw_mag[1],raw_mag[2]);
-        //printf("%6d %6d %6d    -    %5f\n",raw_mag[0],raw_mag[1],raw_mag[2],intensity);
+        //printf("%6d %6d %6d   \n",raw_mag[0],raw_mag[1],raw_mag[2]);
         //printf("%11f, %11f, %11f  \n",pitch, roll, yaw);
         if (not SW4 && not SW3) {
             printf("%11f, %11f, %11f       %11f, \n",pitch* 180 /PI, roll* 180 /PI, yaw* 180 /PI, averageYaw);
