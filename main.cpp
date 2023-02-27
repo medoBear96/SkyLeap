@@ -10,12 +10,16 @@
 #include "FIFO_register.h"
 
 
-#define PI 3.14159265
+#define PI          3.14159265
+#define FREQ        50.000000  //Hz
+#define DEG2RAD     0.0174533 
+#define RAD2DEG     57.2958
+#define GSCF        65.5        //Gyroscope SCaling Factor
 
-#define YAW      0
-#define PITCH    1
-#define ROLL     2
-#define THROTTLE 3
+#define YAW         0
+#define PITCH       1
+#define ROLL        2
+#define THROTTLE    3
 
 #define X           0     // X axis
 #define Y           1     // Y axis
@@ -31,7 +35,7 @@ int16_t raw_mag[3];
 //elaboreated data
 float   acc_angle[3];       //angle estimation from acc
 float   gyr_angle[3];       //angle estimation from acc
-float   alpha = 0.99;       //first complementary filter parameter
+float   alpha = 0.7;       //first complementary filter parameter
 float   beta  = 0.5;        //second complementary filter parameter
 int     mag_str[3];         //intermediate variable of magnetic field
 double  mag[3];             //magnetometer componets on earth system
@@ -54,15 +58,15 @@ Channel channel1(PTD3,1);
 Channel channel2(PTD2,2);
 Channel channel3(PTD0,3);
 Channel channel4(PTD5,4);
-int default_offset[4] = {118, 53, 228, -12};
-float default_factor[4] = {1.244344, 1.375000, 1.726845, 1.196953};
+int     default_offset[4] = {118, 53, 228, -12};
+float   default_factor[4] = {1.244344, 1.375000, 1.726845, 1.196953};
 
 //Switch declaration
-DigitalIn SW1(PTD4, PullUp);
-DigitalIn SW2(PTA12,PullUp);
-DigitalIn SW3(PTA4,PullUp);
-DigitalIn SW4(PTA5,PullUp);
-DigitalIn SW5(PTC8,PullUp);
+DigitalIn SW1(PTD4,  PullUp);
+DigitalIn SW2(PTA12, PullUp);
+DigitalIn SW3(PTA4,  PullUp);
+DigitalIn SW4(PTA5,  PullUp);
+DigitalIn SW5(PTC8,  PullUp);
 
 //Cycle Timer
 Timer CycleTimer;
@@ -97,7 +101,7 @@ int main()
     wait(1);
 
     if (not SW1){
-        printf("SWITCH_1 ON:\nSerial comunication ON\n\nSTARTING SETUP \n\n");
+        printf("\nSWITCH_1 ON:\nSerial comunication ON\n\nSTARTING SETUP \n\n");
         serialCom = true;
         signal_ok();wait(1);//SOUND AND LIGHT EFFECT
     } else { serialCom = false; }
@@ -241,24 +245,24 @@ int main()
     
         // correct axsis orientation of magnetometer
         mag_str[0] =  raw_mag[1];
-        mag_str[1] =  -raw_mag[0];
+        mag_str[1] = -raw_mag[0];
         mag_str[2] =  raw_mag[2];
 
         // get angle aproximation by accelerometer vector
         acc_angle[Y]    = -atan2(  raw_acc[X],  sqrtf( raw_acc[Y] * raw_acc[Y]  +  raw_acc[Z] * raw_acc[Z] )  ) ;
         acc_angle[X]    = -atan2(  raw_acc[Y],  sqrtf( raw_acc[X] * raw_acc[X]  +  raw_acc[Z] * raw_acc[Z] )  ) ;
 
-        // get angle aproximation by angular speed time integration (in radiant (0.0174533))
-        gyr_angle[Y]   += (( raw_gyr[Y] * 1.000000 ) * CycleTime / 1000000 / 65.5) * 0.0174533;
-        gyr_angle[X]   += ((-raw_gyr[X] * 1.000000 ) * CycleTime / 1000000 / 65.5) * 0.0174533;
+        // get angle aproximation by angular speed time integration (degrees to radiant (0.0174533)) (GSCF (65.5))
+        gyr_angle[Y]   += ( raw_gyr[Y] / FREQ / GSCF) * DEG2RAD;
+        gyr_angle[X]   += (-raw_gyr[X] / FREQ / GSCF) * DEG2RAD;
 
         // compensate gyro angle with accelerometer angle in a complementary filter (accelerometer -> LF ; gyroscope -> HF)
         gyr_angle[Y]    = gyr_angle[Y] * alpha + acc_angle[Y] * (1-alpha);
         gyr_angle[X]    = gyr_angle[X] * alpha + acc_angle[X] * (1-alpha);
 
         // compensate yawing motion in angle estimation
-        gyr_angle[Y]   += gyr_angle[X] * sin( ( ( raw_gyr[Z] * 1.000000 ) * CycleTime / 1000000 / 65.5) * 0.0174533 );
-        gyr_angle[X]   -= gyr_angle[Y] * sin( ( ( raw_gyr[Z] * 1.000000 ) * CycleTime / 1000000 / 65.5) * 0.0174533 );
+        gyr_angle[Y]   += gyr_angle[X] * sin( ( raw_gyr[Z] / FREQ / GSCF) * DEG2RAD );
+        gyr_angle[X]   -= gyr_angle[Y] * sin( ( raw_gyr[Z] / FREQ / GSCF) * DEG2RAD );
 
         // get pitch and roll (low pass complementary filter)
         pitch  = pitch * beta + gyr_angle[Y] * (1-beta);
@@ -270,17 +274,10 @@ int main()
         yaw    = atan2(mag[1], mag[0]) ;
 
 
-        printf("%11f %11f %11f  -  %11f %11f  - %11f %11f \n",pitch*180/PI,roll*180/PI,yaw*180/PI,gyr_angle[Y]*180/PI,gyr_angle[X]*180/PI,acc_angle[Y]*180/PI,acc_angle[X]*180/PI);
-
+        printf("%11f %11f - %11f %11f - ",gyr_angle[Y]*180/PI,gyr_angle[X]*180/PI,acc_angle[Y]*180/PI,acc_angle[X]*180/PI);
 
         //applicazione della media mobile
         averageYaw = fiforeg.FifoReg_shift_and_m_av(yaw* 180 /PI);
-
-        //Insert complementary filter 
-        
-
-
-
 
 
 
@@ -306,9 +303,10 @@ int main()
         ESC3.pulsewidth_us(power[2]);
         ESC4.pulsewidth_us(power[3]);
         //printf("%6d %6d %6d   \n",raw_mag[0],raw_mag[1],raw_mag[2]);
+        //printf("%6d %6d %6d   \n",raw_mag[0],raw_mag[1],raw_mag[2]);
         /*
         //printf("%6d %6d %6d  -  %6d %6d %6d  -  %6d %6d %6d\n",raw_acc[0],raw_acc[1],raw_acc[2],raw_gyr[0],raw_gyr[1],raw_gyr[2],raw_mag[0],raw_mag[1],raw_mag[2]);
-        //printf("%6d %6d %6d   \n",raw_mag[0],raw_mag[1],raw_mag[2]);
+        
         //printf("%11f, %11f, %11f  \n",pitch, roll, yaw);
         if (not SW4 && not SW3) {
             printf("%11f, %11f, %11f       %11f, \n",pitch* 180 /PI, roll* 180 /PI, yaw* 180 /PI, averageYaw);
@@ -325,16 +323,19 @@ int main()
         */
         //printf("HARD IRON: %5d %5d %5d    soft IRON: %6f %6f %6f \n", hard_mag[0],hard_mag[1],hard_mag[2], soft_mag[0],soft_mag[1],soft_mag[2]);
         //printf("%11f, %11f, %11f       %11f, \n",pitch* 180 /PI, roll* 180 /PI, yaw* 180 /PI, averageYaw);
+        CycleCounter++;
+        if (CycleCounter==100) { CycleCounter=0; on_off(2); }
+
         CycleEnd = CycleTimer.read_us();
         CycleTime = CycleEnd - CycleBegin;
-        //printf("Cycle: %d \n", CycleEnd - CycleBegin);
-        CycleTimer.reset();
-        CycleCounter++;
-        if (CycleCounter==1000)
-        {
-            CycleCounter=0;
-            on_off(2);
+        printf("%6d \n",20000-CycleTime);
+        if ( CycleTime<20000) {
+            wait_us(20000-CycleTime);
+
         }
+        //wait_us(20000-CycleTime);
+        CycleTimer.reset();
+        
     }
 }
 

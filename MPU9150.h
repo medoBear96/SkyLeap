@@ -123,7 +123,9 @@ void readMagData(int16_t * destination ) {
     uint8_t rawData[6];                                 // x/y/z gyro register data stored here
     int16_t cachedata[3];
     writeByte(AK8975A_ADDRESS, AK8975A_CNTL, 0x01);     // toggle enable data read from magnetometer, no continuous read mode!
-    wait(0.01);
+    
+    /*
+    wait(0.008);
 
 
     // Only accept a new magnetometer data read if the data ready bit is set and 
@@ -138,6 +140,21 @@ void readMagData(int16_t * destination ) {
         destination[1] =  cachedata[1];
         destination[2] =  cachedata[2];
         }
+    }*/
+
+
+    while(not(readByte(AK8975A_ADDRESS, AK8975A_ST1) & 0x01)) {
+        wait_us(100);
+    }
+    readBytes(AK8975A_ADDRESS, AK8975A_XOUT_L, 6, &rawData[0]);  // Read the six raw data registers sequentially into data array
+    cachedata[0]   = ((int16_t)rawData[1] << 8) | rawData[0] ;   // Turn the MSB and LSB into a signed 16-bit value
+    cachedata[1]   = ((int16_t)rawData[3] << 8) | rawData[2] ;  
+    cachedata[2]   = ((int16_t)rawData[5] << 8) | rawData[4] ; 
+
+    destination[0] =  cachedata[0];
+    destination[1] =  cachedata[1];
+    destination[2] =  cachedata[2];
+        
     }
 
 void initMPU9150() {                                // wake up device
