@@ -29,41 +29,50 @@ int16_t raw_gyr[3];
 int16_t raw_mag[3];
 
 //elaboreated data
-double mag[3];
-double pitch,roll,yaw;
-int counter=0;
-int mag_str[3];
+float   acc_angle[3];       //angle estimation from acc
+float   gyr_angle[3];       //angle estimation from acc
+float   alpha = 0.99;       //first complementary filter parameter
+float   beta  = 0.5;        //second complementary filter parameter
+int     mag_str[3];         //intermediate variable of magnetic field
+double  mag[3];             //magnetometer componets on earth system
+double  pitch,roll,yaw;     //final extimeted pitch roll and yaw
+int     counter = 0;        //counter
+        
+//MEDIA MOBILE
+FifoReg fiforeg(20);
+double averageYaw;
 
-//MOTOR DECLARATION
-int power[4] ={1000,1000,1000,1000};
+//ESC declaration and variables
+int power[4] = {1000, 1000, 1000, 1000};
 PwmOut ESC1(PTB0);
 PwmOut ESC2(PTB1);
 PwmOut ESC3(PTB2);
 PwmOut ESC4(PTB3);
 
-//RF DECLARATION
+//RF declaration and variables
 Channel channel1(PTD3,1);
 Channel channel2(PTD2,2);
 Channel channel3(PTD0,3);
 Channel channel4(PTD5,4);
-int default_offset[4] = {118,53,228,-12};
+int default_offset[4] = {118, 53, 228, -12};
 float default_factor[4] = {1.244344, 1.375000, 1.726845, 1.196953};
 
-//AVVIO MEDIA MOBILE
-FifoReg fiforeg(20);
-double averageYaw;
-
-//SWITCH DECLARATION
+//Switch declaration
 DigitalIn SW1(PTD4, PullUp);
 DigitalIn SW2(PTA12,PullUp);
 DigitalIn SW3(PTA4,PullUp);
 DigitalIn SW4(PTA5,PullUp);
 DigitalIn SW5(PTC8,PullUp);
 
-//CYCLE TIMER
+//Cycle Timer
 Timer CycleTimer;
-int CycleBegin, CycleEnd;
+long CycleBegin, CycleEnd;
 int CycleCounter=0;
+long CycleTime;
+
+//Serial port
+bool serialCom;
+Serial pc(USBTX,USBRX,9600);
 
 //SWITCHES
 //
@@ -73,15 +82,13 @@ int CycleCounter=0;
 // SW 4     radio calibration
 // SW 5     pid calibration //START
 // SW 6     Sound On Off
-bool serialCom;
-Serial pc(USBTX,USBRX,9600);
-
-//acceleration complementary filter
 
 
+//_______________________________________________________________________________________________________________________________________
+//
+//|||||||||||||||||||||||||||||||||||||||||||||||||   MAIN   |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+//_______________________________________________________________________________________________________________________________________
 
-//_______________________________________________________
-//||||||||||||||||||||||  MAIN  |||||||||||||||||||||||||
 int main() 
 {   
     //blink(1, 5, 500);
@@ -201,46 +208,71 @@ int main()
     
 
 
-//_______________________________________________________
-//||||||||||||||||||||||  LOOP  |||||||||||||||||||||||||
+//_______________________________________________________________________________________________________________________________________
+//
+//|||||||||||||||||||||||||||||||||||||||||||||||||  LOOP  |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+//_______________________________________________________________________________________________________________________________________
+
     while(1) {
-        //CYCLE COUNTER
+        //Cycle time counter
         CycleTimer.start();
         CycleBegin = CycleTimer.read_us();
         
-        // READ SENSORS
+        // read raw data from sensors
         readAccelData(raw_acc);
         readGyroData(raw_gyr);
         //readMagData(raw_mag);
-        readMagData_calibr(raw_mag); //versione di readMagData(raw_mag) che corregge gli errori in corso d'opera
+        readMagData_calibr(raw_mag); //same of readMagData(raw_mag) with in-flight autocalibration added
 
-        //ACC CORRECTION
+        // Accelerometer correction
         raw_acc[0] -= offset_acc[0];
         raw_acc[1] -= offset_acc[1];
         raw_acc[2] -= offset_acc[2];
 
-        //GYRO CORRECTION
+        // Gyroscope offset correction
         raw_gyr[0] -= offset_gyr[0];
         raw_gyr[1] -= offset_gyr[1];
         raw_gyr[2] -= offset_gyr[2];
 
-        //MAGN CORRECTION
+        // Magnetometer hard and soft iron correction
         raw_mag[0] = (raw_mag[0] - hard_mag[0]) / soft_mag[0];      // per correggere l'errore si è sviluppato il modello
         raw_mag[1] = (raw_mag[1] - hard_mag[1]) / soft_mag[1];      // X_rilevato = X_offset + alpha * x_corretto
         raw_mag[2] = (raw_mag[2] - hard_mag[2]) / soft_mag[1];      // per risolvere soft iron si normalizza a 100
     
-        //INVERSION MAGN
+        // correct axsis orientation of magnetometer
         mag_str[0] =  raw_mag[1];
         mag_str[1] =  -raw_mag[0];
         mag_str[2] =  raw_mag[2];
 
-        //assetto
-        pitch       = -atan2(  raw_acc[0],  sqrtf( raw_acc[1] * raw_acc[1]  +  raw_acc[2] * raw_acc[2] )  ) ;
-        roll        = -atan2(  raw_acc[1],  sqrtf( raw_acc[0] * raw_acc[0]  +  raw_acc[2] * raw_acc[2] )  ) ;
+        // get angle aproximation by accelerometer vector
+        acc_angle[Y]    = -atan2(  raw_acc[X],  sqrtf( raw_acc[Y] * raw_acc[Y]  +  raw_acc[Z] * raw_acc[Z] )  ) ;
+        acc_angle[X]    = -atan2(  raw_acc[Y],  sqrtf( raw_acc[X] * raw_acc[X]  +  raw_acc[Z] * raw_acc[Z] )  ) ;
 
-        mag[0]      = mag_str[0] * cos(pitch) + mag_str[1] * sin(roll) * sin(pitch) - mag_str[2] * cos(roll) * sin(pitch);
-        mag[1]      = mag_str[1] * cos(roll)  + mag_str[2] * sin(roll);
-        yaw         = atan2(mag[1], mag[0]) ;
+        // get angle aproximation by angular speed time integration (in radiant (0.0174533))
+        gyr_angle[Y]   += (( raw_gyr[Y] * 1.000000 ) * CycleTime / 1000000 / 65.5) * 0.0174533;
+        gyr_angle[X]   += ((-raw_gyr[X] * 1.000000 ) * CycleTime / 1000000 / 65.5) * 0.0174533;
+
+        // compensate gyro angle with accelerometer angle in a complementary filter (accelerometer -> LF ; gyroscope -> HF)
+        gyr_angle[Y]    = gyr_angle[Y] * alpha + acc_angle[Y] * (1-alpha);
+        gyr_angle[X]    = gyr_angle[X] * alpha + acc_angle[X] * (1-alpha);
+
+        // compensate yawing motion in angle estimation
+        gyr_angle[Y]   += gyr_angle[X] * sin( ( ( raw_gyr[Z] * 1.000000 ) * CycleTime / 1000000 / 65.5) * 0.0174533 );
+        gyr_angle[X]   -= gyr_angle[Y] * sin( ( ( raw_gyr[Z] * 1.000000 ) * CycleTime / 1000000 / 65.5) * 0.0174533 );
+
+        // get pitch and roll (low pass complementary filter)
+        pitch  = pitch * beta + gyr_angle[Y] * (1-beta);
+        roll   = roll  * beta + gyr_angle[X] * (1-beta);
+
+        // get yaw estimation by magnetometer 
+        mag[0] = mag_str[0] * cos(pitch) + mag_str[1] * sin(roll) * sin(pitch) - mag_str[2] * cos(roll) * sin(pitch);
+        mag[1] = mag_str[1] * cos(roll)  + mag_str[2] * sin(roll);
+        yaw    = atan2(mag[1], mag[0]) ;
+
+
+        printf("%11f %11f %11f  -  %11f %11f  - %11f %11f \n",pitch*180/PI,roll*180/PI,yaw*180/PI,gyr_angle[Y]*180/PI,gyr_angle[X]*180/PI,acc_angle[Y]*180/PI,acc_angle[X]*180/PI);
+
+
         //applicazione della media mobile
         averageYaw = fiforeg.FifoReg_shift_and_m_av(yaw* 180 /PI);
 
@@ -294,7 +326,9 @@ int main()
         //printf("HARD IRON: %5d %5d %5d    soft IRON: %6f %6f %6f \n", hard_mag[0],hard_mag[1],hard_mag[2], soft_mag[0],soft_mag[1],soft_mag[2]);
         //printf("%11f, %11f, %11f       %11f, \n",pitch* 180 /PI, roll* 180 /PI, yaw* 180 /PI, averageYaw);
         CycleEnd = CycleTimer.read_us();
-        //printf("Cycle: %d", CycleEnd - CycleBegin);
+        CycleTime = CycleEnd - CycleBegin;
+        //printf("Cycle: %d \n", CycleEnd - CycleBegin);
+        CycleTimer.reset();
         CycleCounter++;
         if (CycleCounter==1000)
         {

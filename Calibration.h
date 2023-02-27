@@ -31,6 +31,8 @@ int     mag_min[3]      = {32767,32767,32767};
 
 
 
+//Timer serviceT;
+
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //-----------Acc and Gyro sensors calibration---------------------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -160,7 +162,12 @@ bool mag_calibration() {
 
 void readMagData_calibr(int16_t * destination ) {
     int16_t values[3];          //read data
+    //serviceT.start();
     readMagData(values);
+    //serviceT.stop();
+    //printf("read Time %d   ", serviceT.read_us());
+    //serviceT.reset();
+
     bool changes= false;        //max/min change flag
     if (values[X] > mag_max[X]) {
         mag_max[X] = values[X];
