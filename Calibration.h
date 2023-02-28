@@ -29,7 +29,8 @@ float   soft_mag[3];        //soft iron deformation, normalized
 int     mag_max[3]      = {-32768,-32768,-32768};
 int     mag_min[3]      = {32767,32767,32767};
 
-
+int default_hard_mag[3] = {30, 16, -71};
+float default_soft_mag[3] = {1.210000, 1.220000, 1.150000};
 
 //Timer serviceT;
 
@@ -156,6 +157,16 @@ bool mag_calibration() {
 
 }
 
+void default_mag() {
+    hard_mag[X] = default_hard_mag[X];
+    hard_mag[Y] = default_hard_mag[Y];
+    hard_mag[Z] = default_hard_mag[Z];
+    //normalize to +/-100
+    soft_mag[X] = default_soft_mag[X];
+    soft_mag[Y] = default_soft_mag[X];
+    soft_mag[Z] = default_soft_mag[X];
+}
+
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //--------READ and on flight calibration of magnetic sensor------------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -208,6 +219,12 @@ void readMagData_calibr(int16_t * destination ) {
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 float cutOff(float value, float min, float max) {
+    if      (value > max) { value = max; } 
+    else if (value < min) { value = min; }
+    return value;
+}
+
+int cutOffInt(int value, int min, int max) {
     if      (value > max) { value = max; } 
     else if (value < min) { value = min; }
     return value;

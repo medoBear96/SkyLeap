@@ -37,16 +37,18 @@ float   acc_angle[3];       //angle estimation from acc
 float   gyr_angle[3];       //angle estimation from acc
 float   alpha = 0.7;        //first complementary filter parameter
 float   beta  = 0.5;        //second complementary filter parameter
-int     mag_str[3];         //intermediate variable of magnetic field
-int     mag[3];             //magnetometer componets on earth system
+float   mag_str[3];         //intermediate variable of magnetic field
+float   mag[3];             //magnetometer componets on earth system
 float   pitch,roll,yaw;     //final extimeted pitch roll and yaw
 int     counter = 0;        //counter
 
 int angle[3];
+int previous_yaw;
+int delta_yaw;
 float   ang_speed[3];       //velocità angolari
 //MEDIA MOBILE
-FifoReg fiforeg(20);
-double averageYaw;
+FifoReg fiforeg(8);
+double average_yaw;
 
 //PID coefficients (Yaw, Pitch, Roll)
 float Kp[3] = {4.0, 1.3, 1.3};    
@@ -58,7 +60,8 @@ int set_point[3]  = {0, 0, 0};
 int new_e[3]      = {0, 0, 0};
 int prev_e[3]     = {0, 0, 0};
 int delta_e[3]    = {0, 0, 0};
-long sum_e[3]      = {0, 0, 0};
+long sum_e[3]     = {0, 0, 0};
+int correction[3]= {0, 0, 0};
 
 //ESC declaration and variables
 int power[4] = {1000, 1000, 1000, 1000};
@@ -103,11 +106,11 @@ Serial pc(USBTX,USBRX,9600);
 //
 /*||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 \\                                                                                  \\
-\\   A   B        x                   nose down -> positive pitch                   \\
+\\   0   1        x                   nose down -> positive pitch                   \\
 \\    \ /         ^                   right wing down -> negative roll              \\
 \\     X          |                                                                 \\
 \\    / \         |                                                                 \\
-\\   C   D      z +-----> y                                                         \\
+\\   2   3      z +-----> y                                                         \\
 \\                                                                                  \\
 \\  A and D CW                                                                      \\
 \\  B and C CCW                                                                     \\
@@ -160,6 +163,7 @@ int main()
         if (serialCom) {printf("OFFSET CALCULATED \nACC: %d %d %d   GYRO: %d %d %d \n\n\n", offset_acc[0],offset_acc[1],offset_acc[2],offset_gyr[0],offset_gyr[1],offset_gyr[2]); }
     } else {
         if (serialCom) {printf("SWITCH_2 OFF\n\n");}
+        default_mag();
     }
 
     //CALIBRAZIONE MAG
@@ -298,114 +302,94 @@ int main()
         mag[0] = mag_str[0] * cos(pitch) + mag_str[1] * sin(roll) * sin(pitch) - mag_str[2] * cos(roll) * sin(pitch);
         mag[1] = mag_str[1] * cos(roll)  + mag_str[2] * sin(roll);
 
-
-
-        
         yaw    = atan2(mag[1], mag[0]) ;
 
-        angle[YAW]   = ( ( raw_gyr[Z] / FREQ / GSCF) * DEG2RAD )*INT_SCAL;//yaw   *INT_SCAL;
+        angle[YAW]   = yaw   *INT_SCAL;//( ( raw_gyr[Z] / FREQ / GSCF) * DEG2RAD )*INT_SCAL;
         angle[PITCH] = pitch *INT_SCAL;
         angle[ROLL]  = roll  *INT_SCAL;
-/*
+        
+
+        if (angle[YAW] > 8192 && previous_yaw < -8192) {
+            delta_yaw = (angle[YAW] - previous_yaw - 8192);
+        } else if(angle[YAW]< -8192 && previous_yaw> 8192) {
+            delta_yaw = (angle[YAW] - previous_yaw + 8192);
+        } else {
+            delta_yaw = (previous_yaw - angle[YAW]);
+        }
+        previous_yaw= angle[YAW];
+        average_yaw = fiforeg.FifoReg_shift_and_m_av(delta_yaw);
+
+        ang_speed[YAW] = 0.7 * average_yaw + 0.3 * ( ( raw_gyr[Z] / FREQ / GSCF) * DEG2RAD )*INT_SCAL;
+/*      
         ang_speed[ROLL]  = 0.7 * ang_speed[ROLL]  + 0.3 * (raw_gyr[X] / GSCF) *INT_SCAL;
-        ang_speed[PITCH] = 0.7 * ang_speed[PITCH] + 0.3 * (raw_gyr[Y] / GSCF) *INT_SCAL;
-        ang_speed[YAW]   = 0.7 * ang_speed[YAW]   + 0.3 * (raw_gyr[Z] / GSCF) *INT_SCAL;
+        ang_speed[PITCH] = 0.7 * ang_speed[PITCH] + 0.3 * (raw_gyr[Y] / GSCF) *INT_SCAL;       
 */
         //printf("P,R,Y: %11f %11f %11f",pitch*180/PI,roll*180/PI,yaw*180/PI);
-        printf("P,R,Y: %6d %6d %6d",angle[PITCH],angle[ROLL],angle[YAW]);
+       // printf("P,R,Y: %6d %6d %6d",angle[PITCH],angle[ROLL],angle[YAW]);
 
-
-        //set point: pid objective (*1.82 = max 10°)
-        set_point[0]  = (channel1.calibrate_read() - 500)*1.82;
-        set_point[0]  = (channel2.calibrate_read() - 500)*1.82;
-        set_point[0]  = (channel4.calibrate_read() - 500)*1.82;
-
-        // Calculate current errors
-        new_e[YAW]   = angle[YAW]   - set_point[YAW];
-        new_e[PITCH] = angle[PITCH] - set_point[PITCH];
-        new_e[ROLL]  = angle[ROLL]  - set_point[ROLL];
-
-        // Calculate sum of errors : Integral coefficients
-        sum_e[YAW]   += new_e[YAW];
-        sum_e[PITCH] += new_e[PITCH];
-        sum_e[ROLL]  += new_e[ROLL];
-
-        // Keep values in acceptable range
-        sum_e[YAW]   = cutOff(new_e[YAW],   -400/Ki[YAW],   400/Ki[YAW]);
-        sum_e[PITCH] = cutOff(new_e[PITCH], -400/Ki[PITCH], 400/Ki[PITCH]);
-        sum_e[ROLL]  = cutOff(new_e[ROLL],  -400/Ki[ROLL],  400/Ki[ROLL]);
-
-        // Calculate error delta : Derivative coefficients
-        delta_e[YAW]   = new_e[YAW]   - prev_e[YAW];
-        delta_e[PITCH] = new_e[PITCH] - prev_e[PITCH];
-        delta_e[ROLL]  = new_e[ROLL]  - prev_e[ROLL];
-
-        // Save current error as previous_error for next time
-        prev_e[YAW]   = new_e[YAW];
-        prev_e[PITCH] = new_e[PITCH];
-        prev_e[ROLL]  = new_e[ROLL];
-
-
-
-
-/*
-        //PID coefficients (Yaw, Pitch, Roll)
-        float Kp[3] = {4.0, 1.3, 1.3};    
-        float Ki[3] = {0.02, 0.04, 0.04}; 
-        float Kd[3] = {0, 18, 18};   
-
-        //set point, errore, errore differenziale, errore integrale (Yaw, Pitch, Roll)
-        float set_point[3]  = {0, 0, 0};
-        float new_e[3]      = {0, 0, 0};
-        float prev_e[3]     = {0, 0, 0};
-        float delta_e[3]    = {0, 0, 0};
-        float sum_e[3]      = {0, 0, 0};
-
-
-*/
-        //THROTTLE POWER CALCULATION
         channel1.calibratre();
         channel2.calibratre();
         channel3.calibratre();
         channel4.calibratre();
 
-        power[0] = 1000 + channel3.read();
-        power[1] = 1000 + channel3.read();
-        power[2] = 1000 + channel3.read();
-        power[3] = 1000 + channel3.read();
+        //set point: pid objective (*1.82 = max 10°)
+        set_point[0]  = (channel1.read() - 500)*1.82;
+        set_point[0]  = (channel2.read() - 500)*1.82;
+        set_point[0]  = (channel4.read() - 500)*1.82;
 
+        //new error
+        new_e[YAW]   = ang_speed[YAW]   - set_point[YAW];
+        new_e[PITCH] = angle[PITCH]     - set_point[PITCH];
+        new_e[ROLL]  = angle[ROLL]      - set_point[ROLL];
+
+        //printf("%6d %6d %6d %6d %6d ",angle[YAW],previous_yaw,delta_yaw, raw_gyr[Z], new_e[YAW]);
+        //printf("%6d %6d %6d   ",new_e[0],new_e[1],new_e[2]);
+
+        //integrative factor
+        sum_e[YAW]   += new_e[YAW];
+        sum_e[PITCH] += new_e[PITCH];
+        sum_e[ROLL]  += new_e[ROLL];
+
+        // set maximum and minimum
+        sum_e[YAW]   = cutOff(new_e[YAW],   -400/Ki[YAW],   400/Ki[YAW]);
+        sum_e[PITCH] = cutOff(new_e[PITCH], -400/Ki[PITCH], 400/Ki[PITCH]);
+        sum_e[ROLL]  = cutOff(new_e[ROLL],  -400/Ki[ROLL],  400/Ki[ROLL]);
+
+        //derivative factor
+        delta_e[YAW]   = new_e[YAW]   - prev_e[YAW];
+        delta_e[PITCH] = new_e[PITCH] - prev_e[PITCH];
+        delta_e[ROLL]  = new_e[ROLL]  - prev_e[ROLL];
+
+        //update previous error
+        prev_e[YAW]   = new_e[YAW];
+        prev_e[PITCH] = new_e[PITCH];
+        prev_e[ROLL]  = new_e[ROLL];
+
+        //calculate correction
+        correction[YAW]   = (cutOffInt((new_e[YAW]   * Kp[YAW])   + (sum_e[YAW]   * Ki[YAW])   + (delta_e[YAW]   * Kd[YAW]), -500, +500))*0.2 ;
+        correction[PITCH] = (cutOffInt((new_e[PITCH] * Kp[PITCH]) + (sum_e[PITCH] * Ki[PITCH]) + (delta_e[PITCH] * Kd[PITCH]), -500, +500))*0.2 ;
+        correction[ROLL]  = (cutOffInt((new_e[ROLL]  * Kp[ROLL])  + (sum_e[ROLL]  * Ki[ROLL])  + (delta_e[ROLL]  * Kd[ROLL]), -500, +500))*0.2 ;
+
+        //printf("%6d %6d %6d - %6d %6d %6d   ",new_e[0], new_e[1], new_e[2], correction[0], correction[1], correction[2]);
+
+        //THROTTLE POWER CALCULATION
+        if (channel3.read()>50){
+            power[0] = 1000 + channel3.read() - correction[ROLL] - correction[PITCH] + correction[YAW];
+            power[1] = 1000 + channel3.read() + correction[ROLL] - correction[PITCH] - correction[YAW];
+            power[2] = 1000 + channel3.read() - correction[ROLL] + correction[PITCH] + correction[YAW];
+            power[3] = 1000 + channel3.read() + correction[ROLL] + correction[PITCH] + correction[YAW];
+        } else {
+            power[0] = 1000;
+            power[1] = 1000;
+            power[2] = 1000;
+            power[3] = 1000;
+        }
+        printf("%6d %6d %6d %6d  - %d ",power[0], power[1], power[2], power[3], channel3.read());
         //ESC OUTPUT
         ESC1.pulsewidth_us(power[0]);
         ESC2.pulsewidth_us(power[1]);
         ESC3.pulsewidth_us(power[2]);
         ESC4.pulsewidth_us(power[3]);
-        
-
-
-        /* Collezione di vari print utili
-
-        //channel1.print();channel2.print();channel3.print();channel4.print();
-
-        //printf("%6d %6d %6d   \n",raw_mag[0],raw_mag[1],raw_mag[2]);
-        
-        //printf("%6d %6d %6d  -  %6d %6d %6d  -  %6d %6d %6d\n",raw_acc[0],raw_acc[1],raw_acc[2],raw_gyr[0],raw_gyr[1],raw_gyr[2],raw_mag[0],raw_mag[1],raw_mag[2]);
-        
-        //printf("%11f, %11f, %11f  \n",pitch, roll, yaw);
-
-        //printf("%11f, %11f, %11f       %11f, \n",pitch* 180 /PI, roll* 180 /PI, yaw* 180 /PI, averageYaw);
-
-        //printf("%13f, %13f        %9f, %9f, %9f\n",mag[0], mag[1], pitch, roll, yaw);
-        
-        //printf("%6d %6d %6d    -    %5f\n",raw_mag[0],raw_mag[1],raw_mag[2],intensity);
-        
-        //fiforeg.FifoReg_print();
-
-        //printf("HARD IRON: %5d %5d %5d    soft IRON: %6f %6f %6f \n", hard_mag[0],hard_mag[1],hard_mag[2], soft_mag[0],soft_mag[1],soft_mag[2]);
-
-        */
-        
-
-
 
         // Green Led Running program (toggle every 100 cycles)
         CycleCounter++;
@@ -425,3 +409,24 @@ int main()
 }
 
 
+/* Collezione di vari print utili
+
+        //channel1.print();channel2.print();channel3.print();channel4.print();
+
+        //printf("%6d %6d %6d   \n",raw_mag[0],raw_mag[1],raw_mag[2]);
+        
+        //printf("%6d %6d %6d  -  %6d %6d %6d  -  %6d %6d %6d\n",raw_acc[0],raw_acc[1],raw_acc[2],raw_gyr[0],raw_gyr[1],raw_gyr[2],raw_mag[0],raw_mag[1],raw_mag[2]);
+        
+        //printf("%11f, %11f, %11f  \n",pitch, roll, yaw);
+
+        //printf("%11f, %11f, %11f       %11f, \n",pitch* 180 /PI, roll* 180 /PI, yaw* 180 /PI, averageYaw);
+
+        //printf("%13f, %13f        %9f, %9f, %9f\n",mag[0], mag[1], pitch, roll, yaw);
+        
+        //printf("%6d %6d %6d    -    %5f\n",raw_mag[0],raw_mag[1],raw_mag[2],intensity);
+        
+        //fiforeg.FifoReg_print();
+
+        //printf("HARD IRON: %5d %5d %5d    soft IRON: %6f %6f %6f \n", hard_mag[0],hard_mag[1],hard_mag[2], soft_mag[0],soft_mag[1],soft_mag[2]);
+
+*/
