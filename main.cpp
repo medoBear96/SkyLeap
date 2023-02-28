@@ -15,7 +15,7 @@
 #define DEG2RAD     0.0174533 
 #define RAD2DEG     57.2958
 #define GSCF        65.5        //Gyroscope SCaling Factor
-
+#define INT_SCAL    2607.59     //scale radiant to int: 0.0174533 = 1° = 45   ||  PI = 180° = 8192
 #define YAW         0
 #define PITCH       1
 #define ROLL        2
@@ -35,16 +35,30 @@ int16_t raw_mag[3];
 //elaboreated data
 float   acc_angle[3];       //angle estimation from acc
 float   gyr_angle[3];       //angle estimation from acc
-float   alpha = 0.7;       //first complementary filter parameter
+float   alpha = 0.7;        //first complementary filter parameter
 float   beta  = 0.5;        //second complementary filter parameter
 int     mag_str[3];         //intermediate variable of magnetic field
-double  mag[3];             //magnetometer componets on earth system
-double  pitch,roll,yaw;     //final extimeted pitch roll and yaw
+int     mag[3];             //magnetometer componets on earth system
+float   pitch,roll,yaw;     //final extimeted pitch roll and yaw
 int     counter = 0;        //counter
-        
+
+int angle[3];
+float   ang_speed[3];       //velocità angolari
 //MEDIA MOBILE
 FifoReg fiforeg(20);
 double averageYaw;
+
+//PID coefficients (Yaw, Pitch, Roll)
+float Kp[3] = {4.0, 1.3, 1.3};    
+float Ki[3] = {0.02, 0.04, 0.04}; 
+float Kd[3] = {0, 18, 18};   
+
+//set point, errore, errore differenziale, errore integrale (Yaw, Pitch, Roll)
+int set_point[3]  = {0, 0, 0};
+int new_e[3]      = {0, 0, 0};
+int prev_e[3]     = {0, 0, 0};
+int delta_e[3]    = {0, 0, 0};
+long sum_e[3]      = {0, 0, 0};
 
 //ESC declaration and variables
 int power[4] = {1000, 1000, 1000, 1000};
@@ -72,7 +86,7 @@ DigitalIn SW5(PTC8,  PullUp);
 Timer CycleTimer;
 long CycleBegin, CycleEnd;
 int CycleCounter=0;
-long CycleTime;
+int CycleTime;
 
 //Serial port
 bool serialCom;
@@ -80,12 +94,27 @@ Serial pc(USBTX,USBRX,9600);
 
 //SWITCHES
 //
-// SW 1     serial output
+// SW 1     Serial output
 // SW 2     Accelerometer-Gyroscope calibration
 // SW 3     Magnetometer hand calibration
 // SW 4     radio calibration
-// SW 5     pid calibration //START
-// SW 6     Sound On Off
+// SW 5     shutdown for activate main loop
+// SW 6     Sound On-Off
+//
+/*||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+\\                                                                                  \\
+\\   A   B        x                   nose down -> positive pitch                   \\
+\\    \ /         ^                   right wing down -> negative roll              \\
+\\     X          |                                                                 \\
+\\    / \         |                                                                 \\
+\\   C   D      z +-----> y                                                         \\
+\\                                                                                  \\
+\\  A and D CW                                                                      \\
+\\  B and C CCW                                                                     \\
+\\                                                                                  \\
+||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||*/
+
+
 
 
 //_______________________________________________________________________________________________________________________________________
@@ -95,11 +124,10 @@ Serial pc(USBTX,USBRX,9600);
 
 int main() 
 {   
-    //blink(1, 5, 500);
-    //SERIAL DECLARATION if (serialCom) {  }
+    
     signal_start();//SOUND AND LIGHT EFFECT
-    wait(1);
-
+    wait(0.5);
+    //SERIAL DECLARATION 
     if (not SW1){
         printf("\nSWITCH_1 ON:\nSerial comunication ON\n\nSTARTING SETUP \n\n");
         serialCom = true;
@@ -108,7 +136,6 @@ int main()
 
 
     //INIZIALIZZAZIONE 
-    
     float test_mag[3];
     initMPU9150();
     initAK8975A(test_mag);
@@ -225,7 +252,6 @@ int main()
         // read raw data from sensors
         readAccelData(raw_acc);
         readGyroData(raw_gyr);
-        //readMagData(raw_mag);
         readMagData_calibr(raw_mag); //same of readMagData(raw_mag) with in-flight autocalibration added
 
         // Accelerometer correction
@@ -271,18 +297,72 @@ int main()
         // get yaw estimation by magnetometer 
         mag[0] = mag_str[0] * cos(pitch) + mag_str[1] * sin(roll) * sin(pitch) - mag_str[2] * cos(roll) * sin(pitch);
         mag[1] = mag_str[1] * cos(roll)  + mag_str[2] * sin(roll);
+
+
+
+        
         yaw    = atan2(mag[1], mag[0]) ;
 
+        angle[YAW]   = ( ( raw_gyr[Z] / FREQ / GSCF) * DEG2RAD )*INT_SCAL;//yaw   *INT_SCAL;
+        angle[PITCH] = pitch *INT_SCAL;
+        angle[ROLL]  = roll  *INT_SCAL;
+/*
+        ang_speed[ROLL]  = 0.7 * ang_speed[ROLL]  + 0.3 * (raw_gyr[X] / GSCF) *INT_SCAL;
+        ang_speed[PITCH] = 0.7 * ang_speed[PITCH] + 0.3 * (raw_gyr[Y] / GSCF) *INT_SCAL;
+        ang_speed[YAW]   = 0.7 * ang_speed[YAW]   + 0.3 * (raw_gyr[Z] / GSCF) *INT_SCAL;
+*/
+        //printf("P,R,Y: %11f %11f %11f",pitch*180/PI,roll*180/PI,yaw*180/PI);
+        printf("P,R,Y: %6d %6d %6d",angle[PITCH],angle[ROLL],angle[YAW]);
 
-        printf("%11f %11f - %11f %11f - ",gyr_angle[Y]*180/PI,gyr_angle[X]*180/PI,acc_angle[Y]*180/PI,acc_angle[X]*180/PI);
 
-        //applicazione della media mobile
-        averageYaw = fiforeg.FifoReg_shift_and_m_av(yaw* 180 /PI);
+        //set point: pid objective (*1.82 = max 10°)
+        set_point[0]  = (channel1.calibrate_read() - 500)*1.82;
+        set_point[0]  = (channel2.calibrate_read() - 500)*1.82;
+        set_point[0]  = (channel4.calibrate_read() - 500)*1.82;
+
+        // Calculate current errors
+        new_e[YAW]   = angle[YAW]   - set_point[YAW];
+        new_e[PITCH] = angle[PITCH] - set_point[PITCH];
+        new_e[ROLL]  = angle[ROLL]  - set_point[ROLL];
+
+        // Calculate sum of errors : Integral coefficients
+        sum_e[YAW]   += new_e[YAW];
+        sum_e[PITCH] += new_e[PITCH];
+        sum_e[ROLL]  += new_e[ROLL];
+
+        // Keep values in acceptable range
+        sum_e[YAW]   = cutOff(new_e[YAW],   -400/Ki[YAW],   400/Ki[YAW]);
+        sum_e[PITCH] = cutOff(new_e[PITCH], -400/Ki[PITCH], 400/Ki[PITCH]);
+        sum_e[ROLL]  = cutOff(new_e[ROLL],  -400/Ki[ROLL],  400/Ki[ROLL]);
+
+        // Calculate error delta : Derivative coefficients
+        delta_e[YAW]   = new_e[YAW]   - prev_e[YAW];
+        delta_e[PITCH] = new_e[PITCH] - prev_e[PITCH];
+        delta_e[ROLL]  = new_e[ROLL]  - prev_e[ROLL];
+
+        // Save current error as previous_error for next time
+        prev_e[YAW]   = new_e[YAW];
+        prev_e[PITCH] = new_e[PITCH];
+        prev_e[ROLL]  = new_e[ROLL];
 
 
 
 
+/*
+        //PID coefficients (Yaw, Pitch, Roll)
+        float Kp[3] = {4.0, 1.3, 1.3};    
+        float Ki[3] = {0.02, 0.04, 0.04}; 
+        float Kd[3] = {0, 18, 18};   
 
+        //set point, errore, errore differenziale, errore integrale (Yaw, Pitch, Roll)
+        float set_point[3]  = {0, 0, 0};
+        float new_e[3]      = {0, 0, 0};
+        float prev_e[3]     = {0, 0, 0};
+        float delta_e[3]    = {0, 0, 0};
+        float sum_e[3]      = {0, 0, 0};
+
+
+*/
         //THROTTLE POWER CALCULATION
         channel1.calibratre();
         channel2.calibratre();
@@ -294,44 +374,49 @@ int main()
         power[2] = 1000 + channel3.read();
         power[3] = 1000 + channel3.read();
 
-        //channel1.print();channel2.print();channel3.print();channel4.print();
-        //printf("\n");
-        
         //ESC OUTPUT
         ESC1.pulsewidth_us(power[0]);
         ESC2.pulsewidth_us(power[1]);
         ESC3.pulsewidth_us(power[2]);
         ESC4.pulsewidth_us(power[3]);
+        
+
+
+        /* Collezione di vari print utili
+
+        //channel1.print();channel2.print();channel3.print();channel4.print();
+
         //printf("%6d %6d %6d   \n",raw_mag[0],raw_mag[1],raw_mag[2]);
-        //printf("%6d %6d %6d   \n",raw_mag[0],raw_mag[1],raw_mag[2]);
-        /*
+        
         //printf("%6d %6d %6d  -  %6d %6d %6d  -  %6d %6d %6d\n",raw_acc[0],raw_acc[1],raw_acc[2],raw_gyr[0],raw_gyr[1],raw_gyr[2],raw_mag[0],raw_mag[1],raw_mag[2]);
         
         //printf("%11f, %11f, %11f  \n",pitch, roll, yaw);
-        if (not SW4 && not SW3) {
-            printf("%11f, %11f, %11f       %11f, \n",pitch* 180 /PI, roll* 180 /PI, yaw* 180 /PI, averageYaw);
-        } else if (not SW4 && SW3) {
-            //printf("%13f, %13f        %9f, %9f, %9f\n",mag[0], mag[1], pitch, roll, yaw);
 
-        } else if (SW4 && not SW3) {
-            //printf("%6d %6d %6d    -    %5f\n",raw_mag[0],raw_mag[1],raw_mag[2],intensity);
-            //fiforeg.FifoReg_print();
-        } else {
-            
-        }
-        
-        */
-        //printf("HARD IRON: %5d %5d %5d    soft IRON: %6f %6f %6f \n", hard_mag[0],hard_mag[1],hard_mag[2], soft_mag[0],soft_mag[1],soft_mag[2]);
         //printf("%11f, %11f, %11f       %11f, \n",pitch* 180 /PI, roll* 180 /PI, yaw* 180 /PI, averageYaw);
+
+        //printf("%13f, %13f        %9f, %9f, %9f\n",mag[0], mag[1], pitch, roll, yaw);
+        
+        //printf("%6d %6d %6d    -    %5f\n",raw_mag[0],raw_mag[1],raw_mag[2],intensity);
+        
+        //fiforeg.FifoReg_print();
+
+        //printf("HARD IRON: %5d %5d %5d    soft IRON: %6f %6f %6f \n", hard_mag[0],hard_mag[1],hard_mag[2], soft_mag[0],soft_mag[1],soft_mag[2]);
+
+        */
+        
+
+
+
+        // Green Led Running program (toggle every 100 cycles)
         CycleCounter++;
         if (CycleCounter==100) { CycleCounter=0; on_off(2); }
 
+        // Every Cycle should be 20ms long: match 50 Hertz frequency by waiting excess time
         CycleEnd = CycleTimer.read_us();
         CycleTime = CycleEnd - CycleBegin;
-        printf("%6d \n",20000-CycleTime);
+        printf("    T: %6d \n",CycleTime);
         if ( CycleTime<20000) {
             wait_us(20000-CycleTime);
-
         }
         //wait_us(20000-CycleTime);
         CycleTimer.reset();
