@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <cstdio>
 #include "MPU9150.h"
-//#include "Channel.h"
+//#include "Channel.h"  //commented because already included in calibration
 #include "Calibration.h"
 #include "Lights.h"
 #include "FIFO_register.h"
@@ -16,6 +16,8 @@
 #define RAD2DEG     57.2958
 #define GSCF        65.5        //Gyroscope SCaling Factor
 #define INT_SCAL    2607.59     //scale radiant to int: 0.0174533 = 1° = 45   ||  PI = 180° = 8192
+
+//default value
 #define YAW         0
 #define PITCH       1
 #define ROLL        2
@@ -24,7 +26,8 @@
 #define X           0     // X axis
 #define Y           1     // Y axis
 #define Z           2     // Z axis
-//CALIBRATION
+
+//calibration samples
 int sample=200;
 
 //raw data
@@ -37,6 +40,7 @@ float   acc_angle[3];       //angle estimation from acc
 float   gyr_angle[3];       //angle estimation from acc
 float   alpha = 0.7;        //first complementary filter parameter
 float   beta  = 0.5;        //second complementary filter parameter
+float   gamma = 0.7;        //yaw speed complementary filter parameter
 float   mag_str[3];         //intermediate variable of magnetic field
 float   mag[3];             //magnetometer componets on earth system
 float   pitch,roll,yaw;     //final extimeted pitch roll and yaw
@@ -46,13 +50,14 @@ int angle[3];
 int previous_yaw;
 int delta_yaw;
 float   ang_speed[3];       //velocità angolari
+
 //MEDIA MOBILE
 FifoReg fiforeg(8);
 double average_yaw;
 
 //PID coefficients (Yaw, Pitch, Roll)
 float Kp[3] = {4.0, 1.3, 1.3};    
-float Ki[3] = {0.02, 0.04, 0.04}; 
+float Ki[3] = {0.00, 0.00, 0.00}; 
 float Kd[3] = {0, 18, 18};   
 
 //set point, errore, errore differenziale, errore integrale (Yaw, Pitch, Roll)
@@ -61,7 +66,7 @@ int new_e[3]      = {0, 0, 0};
 int prev_e[3]     = {0, 0, 0};
 int delta_e[3]    = {0, 0, 0};
 long sum_e[3]     = {0, 0, 0};
-int correction[3]= {0, 0, 0};
+int correction[3] = {0, 0, 0};
 
 //ESC declaration and variables
 int power[4] = {1000, 1000, 1000, 1000};
@@ -258,7 +263,7 @@ int main()
         readGyroData(raw_gyr);
         readMagData_calibr(raw_mag); //same of readMagData(raw_mag) with in-flight autocalibration added
 
-        // Accelerometer correction
+        // Accelerometer offset correction
         raw_acc[0] -= offset_acc[0];
         raw_acc[1] -= offset_acc[1];
         raw_acc[2] -= offset_acc[2];
@@ -273,7 +278,7 @@ int main()
         raw_mag[1] = (raw_mag[1] - hard_mag[1]) / soft_mag[1];      // X_rilevato = X_offset + alpha * x_corretto
         raw_mag[2] = (raw_mag[2] - hard_mag[2]) / soft_mag[1];      // per risolvere soft iron si normalizza a 100
     
-        // correct axsis orientation of magnetometer
+        // correct axsis orientation of magnetometer (magnetometer and accelerometer don't share same axis)
         mag_str[0] =  raw_mag[1];
         mag_str[1] = -raw_mag[0];
         mag_str[2] =  raw_mag[2];
@@ -282,7 +287,7 @@ int main()
         acc_angle[Y]    = -atan2(  raw_acc[X],  sqrtf( raw_acc[Y] * raw_acc[Y]  +  raw_acc[Z] * raw_acc[Z] )  ) ;
         acc_angle[X]    = -atan2(  raw_acc[Y],  sqrtf( raw_acc[X] * raw_acc[X]  +  raw_acc[Z] * raw_acc[Z] )  ) ;
 
-        // get angle aproximation by angular speed time integration (degrees to radiant (0.0174533)) (GSCF (65.5))
+        // get angle aproximation by angular speed integration (degrees to radiant (0.0174533)) (GSCF (65.5))
         gyr_angle[Y]   += ( raw_gyr[Y] / FREQ / GSCF) * DEG2RAD;
         gyr_angle[X]   += (-raw_gyr[X] / FREQ / GSCF) * DEG2RAD;
 
@@ -303,12 +308,20 @@ int main()
         mag[1] = mag_str[1] * cos(roll)  + mag_str[2] * sin(roll);
 
         yaw    = atan2(mag[1], mag[0]) ;
-
+        
+        // scaling float values to int -> PI = 180° = 8192
+        // good sensitivity and range 
         angle[YAW]   = yaw   *INT_SCAL;//( ( raw_gyr[Z] / FREQ / GSCF) * DEG2RAD )*INT_SCAL;
         angle[PITCH] = pitch *INT_SCAL;
         angle[ROLL]  = roll  *INT_SCAL;
         
+        // hard to use directly the yaw angle to correct the drift
+        // alternative: get the yaw anglular speed from a filtered compass which is driftless but noisy
+        // and implementing another complementary filter: LP from compass and HP from gyroscope
+        // In this way we obtain the asymptotic behavior to the compass angle
 
+        // TO BE CORRECTED
+        // previous angle should be filtered like current angle
         if (angle[YAW] > 8192 && previous_yaw < -8192) {
             delta_yaw = (angle[YAW] - previous_yaw - 8192);
         } else if(angle[YAW]< -8192 && previous_yaw> 8192) {
@@ -316,26 +329,26 @@ int main()
         } else {
             delta_yaw = (previous_yaw - angle[YAW]);
         }
-        previous_yaw= angle[YAW];
+        
+        previous_yaw = angle[YAW];
         average_yaw = fiforeg.FifoReg_shift_and_m_av(delta_yaw);
 
-        ang_speed[YAW] = 0.7 * average_yaw + 0.3 * ( ( raw_gyr[Z] / FREQ / GSCF) * DEG2RAD )*INT_SCAL;
-/*      
-        ang_speed[ROLL]  = 0.7 * ang_speed[ROLL]  + 0.3 * (raw_gyr[X] / GSCF) *INT_SCAL;
-        ang_speed[PITCH] = 0.7 * ang_speed[PITCH] + 0.3 * (raw_gyr[Y] / GSCF) *INT_SCAL;       
-*/
-        //printf("P,R,Y: %11f %11f %11f",pitch*180/PI,roll*180/PI,yaw*180/PI);
+        //complementary filter
+        ang_speed[YAW] = (gamma) * average_yaw + (1 - gamma) * ( ( raw_gyr[Z] / FREQ / GSCF) * DEG2RAD )*INT_SCAL;
+
+       // printf("P,R,Y: %11f %11f %11f",pitch*180/PI,roll*180/PI,yaw*180/PI);
        // printf("P,R,Y: %6d %6d %6d",angle[PITCH],angle[ROLL],angle[YAW]);
 
+        // use the calibration factor on RF recieved data
         channel1.calibratre();
         channel2.calibratre();
         channel3.calibratre();
         channel4.calibratre();
 
-        //set point: pid objective (*1.82 = max 10°)
-        set_point[0]  = (channel1.read() - 500)*1.82;
-        set_point[0]  = (channel2.read() - 500)*1.82;
-        set_point[0]  = (channel4.read() - 500)*1.82;
+        //set point: pid objective ( * 1.82 = max 10°)
+        set_point[0]  = (channel1.read() - 500) * 1.82;
+        set_point[0]  = (channel2.read() - 500) * 1.82;
+        set_point[0]  = (channel4.read() - 500) * 1.82;
 
         //new error
         new_e[YAW]   = ang_speed[YAW]   - set_point[YAW];
@@ -384,7 +397,7 @@ int main()
             power[2] = 1000;
             power[3] = 1000;
         }
-        printf("%6d %6d %6d %6d  - %d ",power[0], power[1], power[2], power[3], channel3.read());
+        //printf("%6d %6d %6d %6d  - %d ",power[0], power[1], power[2], power[3], channel3.read());
         //ESC OUTPUT
         ESC1.pulsewidth_us(power[0]);
         ESC2.pulsewidth_us(power[1]);
@@ -409,7 +422,7 @@ int main()
 }
 
 
-/* Collezione di vari print utili
+/* print collection
 
         //channel1.print();channel2.print();channel3.print();channel4.print();
 

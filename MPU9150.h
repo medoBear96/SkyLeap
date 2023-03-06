@@ -44,6 +44,7 @@
 
 I2C i2c(PTE0, PTE1);
 
+//Accelerometer range selector
 enum Ascale {
     AFS_2G = 0,
     AFS_4G,
@@ -51,6 +52,7 @@ enum Ascale {
     AFS_16G
     };
 
+//Gyroscope range selector
 enum Gscale {
     GFS_250DPS = 0,
     GFS_500DPS,
@@ -74,6 +76,7 @@ char readByte(uint8_t address, uint8_t regster)  {
     return data_read[0]; 
     }
 
+// read multiple Bytes
 void readBytes(uint8_t address, uint8_t regster, uint8_t count, uint8_t * dest) {     
     char data_read[14];
     char data_write[1];
@@ -86,23 +89,17 @@ void readBytes(uint8_t address, uint8_t regster, uint8_t count, uint8_t * dest) 
     }
     
 void initAK8975A(float * destination) {
-    uint8_t rawData[3];                                         // x/y/z gyro register data stored here
+    uint8_t rawData[3];                                         // raw data stored here
     writeByte(AK8975A_ADDRESS, AK8975A_CNTL, 0x00);             // Power down
     wait(0.01);
     writeByte(AK8975A_ADDRESS, AK8975A_CNTL, 0x0F);             // Enter Fuse ROM access mode
     wait(0.01);
-    readBytes(AK8975A_ADDRESS, AK8975A_ASAX, 3, &rawData[0]);   // Read the x-, y-, and z-axis calibration values
-    destination[0] =  (float)(rawData[0] - 128)/256.0f + 1.0f;  // Return x-axis sensitivity adjustment values
+    readBytes(AK8975A_ADDRESS, AK8975A_ASAX, 3, &rawData[0]);   // Read values
+    destination[0] =  (float)(rawData[0] - 128)/256.0f + 1.0f;  
     destination[1] =  (float)(rawData[1] - 128)/256.0f + 1.0f;  
     destination[2] =  (float)(rawData[2] - 128)/256.0f + 1.0f; 
     }
-
-void resetMPU9150() {
-    writeByte(MPU9150_ADDRESS, PWR_MGMT_1, 0x80);                // Write a one to bit 7 reset bit; toggle reset device
-    wait(0.1);
-    }
     
-
 void readAccelData(int16_t * destination) {
     uint8_t rawData[6];                                                     // x/y/z accel register data stored here
     readBytes(MPU9150_ADDRESS, ACCEL_XOUT_H, 6, &rawData[0]);               // Read the six raw data registers into data array
@@ -123,26 +120,6 @@ void readMagData(int16_t * destination ) {
     uint8_t rawData[6];                                 // x/y/z gyro register data stored here
     int16_t cachedata[3];
     writeByte(AK8975A_ADDRESS, AK8975A_CNTL, 0x01);     // toggle enable data read from magnetometer, no continuous read mode!
-    
-    /*
-    wait(0.008);
-
-
-    // Only accept a new magnetometer data read if the data ready bit is set and 
-    // if there are no sensor overflow or data read errors
-    if(readByte(AK8975A_ADDRESS, AK8975A_ST1) & 0x01) {              // wait for magnetometer data ready bit to be set
-        readBytes(AK8975A_ADDRESS, AK8975A_XOUT_L, 6, &rawData[0]);  // Read the six raw data registers sequentially into data array
-        cachedata[0]   = ((int16_t)rawData[1] << 8) | rawData[0] ;   // Turn the MSB and LSB into a signed 16-bit value
-        cachedata[1]   = ((int16_t)rawData[3] << 8) | rawData[2] ;  
-        cachedata[2]   = ((int16_t)rawData[5] << 8) | rawData[4] ; 
-
-        destination[0] =  cachedata[0];
-        destination[1] =  cachedata[1];
-        destination[2] =  cachedata[2];
-        }
-    }*/
-
-
     while(not(readByte(AK8975A_ADDRESS, AK8975A_ST1) & 0x01)) {
         wait_us(100);
     }
@@ -150,11 +127,9 @@ void readMagData(int16_t * destination ) {
     cachedata[0]   = ((int16_t)rawData[1] << 8) | rawData[0] ;   // Turn the MSB and LSB into a signed 16-bit value
     cachedata[1]   = ((int16_t)rawData[3] << 8) | rawData[2] ;  
     cachedata[2]   = ((int16_t)rawData[5] << 8) | rawData[4] ; 
-
     destination[0] =  cachedata[0];
     destination[1] =  cachedata[1];
     destination[2] =  cachedata[2];
-        
     }
 
 void initMPU9150() {                                // wake up device

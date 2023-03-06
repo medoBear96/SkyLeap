@@ -43,7 +43,7 @@ public:
             if (time < min){ min = time; }
     }
     void calculate_calibration(){                   //this function utilze the updated interval
-        offset = min+50;                            //it must be called one time after fin_interval() for cycle
+        offset = min+50;                            //it must be called one time after find_interval() per cycle
         new_max=max-offset;
         factor = 1100.00000/new_max;
     }
