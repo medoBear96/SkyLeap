@@ -200,12 +200,12 @@ void tone(int time_ms, float frequency) {
     Buzz.write(0.0000);
 }
 
-void shutup() {
+void shutup() {  //if not called the buzzer will keep producing noise
     DigitalOut Buzz(PTE23);
     Buzz=false;
 }
 
-void sound_ready() {
+void sound_ready() {  //1UP 
     tone(135, 1318.5);
     wait_ms(10);
     tone(135, 1568);
@@ -220,14 +220,14 @@ void sound_ready() {
     wait_ms(10);
 }
 
-void sound_ok() {
+void sound_ok() { // that's right
     tone(135, 1979.5);
     wait_ms(10);
     tone(270, 2637);
     wait_ms(10);
 }
-void sound_check()
-{
+
+void sound_check() {
   tone(150,784);
   wait_ms(80);
   tone(150,2637);
@@ -235,8 +235,8 @@ void sound_check()
   tone(150,2093);
   wait_ms(80);
 }
-void sound_start()
-{
+
+void sound_start() {
     tone(300,NOTE_E5);
     wait_ms(80);
     tone(150,NOTE_B4);
@@ -253,8 +253,7 @@ void sound_start()
     wait_ms(80);
 }
 
-void sound_error()
-{
+void sound_error() {
     tone(125,174.5);
     wait_ms(100);
     tone(125,110);

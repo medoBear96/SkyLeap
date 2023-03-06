@@ -1,3 +1,77 @@
+/* 
+By: Riccardo Medvescek
+date: 28/2/23
+License: freeware
+This project is intended as an assessment exercise for an examination. The code is complete and ready 
+to be used, however, tuning of the PID coefficients and complementary filters has not been done. 
+Mathematical simulation or empirical calibration work would be required.
+
+Hardware setup 
+
+MPU9150-----FRDM KL25Z:       ( /!\ be awere: I/O pin with I2C capabilities needed)
+ VDD     ->  3.3 V 
+ SDA     ->  PTE0
+ SCL     ->  PTE1
+ GND     ->  GND
+ others  ->  N.C.
+RF reciever-FRDM KL25Z:       ( /!\ be awere: I/O pin with interrupt capabilities needed)
+ CH 1    ->  PTD3
+ CH 2    ->  PTD2 
+ CH 3    ->  PTD0 
+ CH 4    ->  PTD5 
+ESC PWM output:               ( /!\ be awere: I/O pin with PWM capabilities needed)
+ ESC1    ->  PTB0
+ ESC2    ->  PTB1
+ ESC3    ->  PTB2
+ ESC4    ->  PTB3
+Switches:
+ SW1     ->  PTD4
+ SW2     ->  PTA12
+ SW3     ->  PTA4
+ SW4     ->  PTA5
+ SW5     ->  PTC8
+ SW6     ->  PTC9
+Shield's LEDs
+ Green   ->  PTE20
+ Blue    ->  PTE21
+ Red     ->  PTE22
+Others  
+ Buzzer  ->  PTE23      ( /!\ be awere: I/O pin with PWM capabilities needed)
+ Button 1->             ( /!\ be awere: I/O pin with interrupt capabilities needed)
+ Button 2->             ( /!\ be awere: I/O pin with interrupt capabilities needed)
+
+SWITCHES assaignments:
+ SW 1     Serial output on off
+ SW 2     Accelerometer-Gyroscope calibration
+ SW 3     Magnetometer hand calibration
+ SW 4     radio calibration
+ SW 5     shutdown for activate main loop
+ SW 6     Sound On-Off
+
+||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+\\                                                                                  \\
+\\   0   1        x                   nose down -> positive pitch                   \\
+\\    \ /         ^                   right wing down -> negative roll              \\
+\\     X          |                                                                 \\
+\\    / \         |                                                                 \\
+\\   2   3      z +-----> y                                                         \\
+\\                                                                                  \\
+\\  0 and 3 CW                                                                      \\
+\\  1 and 2 CCW                                                                     \\
+\\                                                                                  \\
+||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+last: the frequency of the main loop is set to 50 Hz. However, the program takes about 12 ms 
+to make one cycle so it's already possible to raise the frequency to 80Hz. Of these 12 ms, about 
+8 ms are needed to read data from the magnetometer in FUSE mode. Maybe it's possible to read 
+directly the magnetometer data using the auxiliary SDA SCL pin on MPU9150 reducing the needed 
+time drastically. In this case, the cycle time could be reduced to about 5ms. This could be useful 
+to raise the frequency up to 200Hz or to add higher-level functionality.
+
+Be awere: simply raising the frequency value over 80 Hz would be useless in terms of cycle speed 
+and could lead to bad error estimation due to wrong integration and derivation factor
+*/
+
 
 #include "mbed.h"
 #include "math.h"
@@ -11,7 +85,7 @@
 
 
 #define PI          3.14159265
-#define FREQ        50.000000  //Hz
+#define FREQ        50.000000  //Hz    Change this value to change the frequency of the cycle
 #define DEG2RAD     0.0174533 
 #define RAD2DEG     57.2958
 #define GSCF        65.5        //Gyroscope SCaling Factor
@@ -99,30 +173,6 @@ int CycleTime;
 //Serial port
 bool serialCom;
 Serial pc(USBTX,USBRX,9600);
-
-//SWITCHES
-//
-// SW 1     Serial output
-// SW 2     Accelerometer-Gyroscope calibration
-// SW 3     Magnetometer hand calibration
-// SW 4     radio calibration
-// SW 5     shutdown for activate main loop
-// SW 6     Sound On-Off
-//
-/*||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-\\                                                                                  \\
-\\   0   1        x                   nose down -> positive pitch                   \\
-\\    \ /         ^                   right wing down -> negative roll              \\
-\\     X          |                                                                 \\
-\\    / \         |                                                                 \\
-\\   2   3      z +-----> y                                                         \\
-\\                                                                                  \\
-\\  A and D CW                                                                      \\
-\\  B and C CCW                                                                     \\
-\\                                                                                  \\
-||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||*/
-
-
 
 
 //_______________________________________________________________________________________________________________________________________
@@ -218,7 +268,7 @@ int main()
     }
  
     signal_ready();wait(1);//SOUND AND LIGHT EFFECT
-    shutup();wait(1);//SHUTUP
+    shutup();wait(1);//SHUTUP: if not called the buzzer will keep producing noise
 
     //MOTOR 
     if (serialCom) {printf("STARTING ESC \n\n");}
@@ -244,8 +294,6 @@ int main()
     power[2] = 1100;
     power[3] = 1100;
     if (serialCom) {printf("START \n\n");}
-
-    
 
 
 //_______________________________________________________________________________________________________________________________________

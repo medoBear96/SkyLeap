@@ -11,5 +11,5 @@ Hardware components:
 - Quadcopter drone frame 
 - Power generetor
 
-The project is still incomplete. The following changes and implementations are needed: PID tuning, improvement of 
+The code is complete however the tuning is not. The following changes and implementations are needed: PID tuning, improvement of 
 yaw correction, complementary filter parameters tuning, improvement of magnetometer reading time.
